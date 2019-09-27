@@ -35,7 +35,7 @@ func TestMarshal(t *testing.T) {
 type TestHandler struct {
 }
 
-func (t *TestHandler) Process(header *MsgHeader, r *Reader, w io.Writer) error {
+func (t *TestHandler) Process(header *MsgHeader, r *Reader, conn *ConnContext) error {
 	query := &Query{}
 	e := query.UnMarshal(r)
 	if e != nil {
@@ -47,39 +47,39 @@ func (t *TestHandler) Process(header *MsgHeader, r *Reader, w io.Writer) error {
 
 	_, ok := query.Query["$query"]
 	if ok {
-		return listDatabase(query, w)
+		return listDatabase(query, conn)
 	}
 
 	_, ok = query.Query["isMaster"]
 	if ok {
-		return isMaster(query, w)
+		return isMaster(query, conn)
 	}
 
 	_, ok = query.Query["whatsmyuri"]
 	if ok {
-		return whatsmyuri(query, w)
+		return whatsmyuri(query, conn)
 	}
 
 	_, ok = query.Query["buildinfo"]
 	if ok {
-		return buildinfo(query, w)
+		return buildinfo(query, conn)
 	}
 	_, ok = query.Query["buildInfo"]
 	if ok {
-		return buildinfo(query, w)
+		return buildinfo(query, conn)
 	}
 
 	_, ok = query.Query["serverStatus"]
 	if ok {
-		return serverStatus(query, w)
+		return serverStatus(query, conn)
 	}
 
 	_, ok = query.Query["serverStatus"]
 	if ok {
-		return serverStatus(query, w)
+		return serverStatus(query, conn)
 	}
 
-	return defaultReply(query, w)
+	return defaultReply(query, conn)
 }
 
 func defaultReply(query *Query, w io.Writer) error {

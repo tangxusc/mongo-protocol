@@ -63,7 +63,7 @@ func (d *PrintHandler) Process(header *MsgHeader, r *Reader, conn *ConnContext) 
 
 type QueryHandler interface {
 	Support(query *Query) bool
-	Process(query *Query, reply *Reply)
+	Process(query *Query, reply *Reply) error
 }
 
 type ConnContext struct {

@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewServer(t *testing.T) {
-	server := NewServer(`27017`)
+	server := NewServer(`27018`)
 	server.AddHandler(OP_QUERY, &TestHandler{})
 	e := server.Start(context.TODO())
 	if e != nil {

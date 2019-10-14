@@ -58,16 +58,36 @@ func (server *Server) handler(ctx context.Context, conn net.Conn) {
 			}
 			rd := io.LimitReader(connContext, int64(header.MessageLength-4*4))
 			r := &Reader{rd}
-			h, ok := server.handlerMap[header.OpCode]
-			if !ok {
-				e = server.defaultHandler.Process(header, r, connContext)
-			} else {
-				e = h.Process(header, r, connContext)
-			}
-			if e != nil {
-				logrus.Errorf(`[server]process error:%v on port [%s]`, e, server.Port)
-			}
+			server.process(header, connContext, e, r)
 		}
+	}
+}
+
+func (server *Server) process(header *MsgHeader, connContext *ConnContext, e error, r *Reader) {
+	defer func() {
+		if e := recover(); e != nil {
+			writeError(header, e, connContext)
+		}
+	}()
+	h, ok := server.handlerMap[header.OpCode]
+	if !ok {
+		e = server.defaultHandler.Process(header, r, connContext)
+	} else {
+		e = h.Process(header, r, connContext)
+	}
+	if e != nil {
+		logrus.Errorf(`[server]process error:%v on port [%s]`, e, server.Port)
+		writeError(header, e, connContext)
+	}
+}
+
+func writeError(header *MsgHeader, e interface{}, connContext *ConnContext) {
+	reply := NewReply(header.RequestID)
+	reply.ResponseFlags = QueryFailure
+	reply.NumberReturned = 1
+	reply.Documents = map[string]interface{}{"$err": fmt.Sprintf("%v", e)}
+	if e := reply.Write(connContext); e != nil {
+		panic(e)
 	}
 }
 

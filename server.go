@@ -69,7 +69,7 @@ func (server *Server) process(header *MsgHeader, connContext *ConnContext, e err
 			writeError(header, e, connContext)
 		}
 	}()
-	logrus.Debugf("[server]process command header.OpCode:%s", header.OpCode)
+	logrus.Debugf("[server]process command header.OpCode:%v", header.OpCode)
 	h, ok := server.handlerMap[header.OpCode]
 	if !ok {
 		e = server.defaultHandler.Process(header, r, connContext)
@@ -83,13 +83,23 @@ func (server *Server) process(header *MsgHeader, connContext *ConnContext, e err
 }
 
 func writeError(header *MsgHeader, e interface{}, connContext *ConnContext) {
-	reply := NewReply(header.RequestID)
-	reply.ResponseFlags = QueryFailure
-	reply.NumberReturned = 1
-	reply.Documents = map[string]interface{}{"$err": fmt.Sprintf("%v", e)}
+	reply := NewErrorReply(header, fmt.Sprintf("%v", e))
 	if e := reply.Write(connContext); e != nil {
 		panic(e)
 	}
+}
+
+func NewErrorReply(header *MsgHeader, msg string) *Reply {
+	reply := NewReply(header.RequestID)
+	reply.NumberReturned = 1
+	if header.OpCode == OP_QUERY {
+		reply.ResponseFlags = QueryFailure
+		reply.Documents = map[string]interface{}{"$err": msg}
+	} else {
+		reply.ResponseFlags = 0
+		reply.Documents = map[string]interface{}{"errmsg": msg}
+	}
+	return reply
 }
 
 func (server *Server) AddHandler(code OpCode, handler Handler) {

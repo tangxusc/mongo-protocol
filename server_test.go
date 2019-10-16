@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestNewServer(t *testing.T) {
@@ -170,7 +171,19 @@ func whatsmyuri(query *Query, w io.Writer) error {
 func isMaster(query *Query, writer io.Writer) error {
 	reply := NewReply(query.Header.RequestID)
 	reply.NumberReturned = 1
-	reply.Documents = map[string]interface{}{"isMaster": 1, "ok": 1}
+	reply.Documents = map[string]interface{}{
+		"ismaster":                     true,
+		"maxBsonObjectSize":            16777216,
+		"maxMessageSizeBytes":          48000000,
+		"maxWriteBatchSize":            100000,
+		"localTime":                    time.Now(),
+		"logicalSessionTimeoutMinutes": 30,
+		"connectionId":                 808,
+		"minWireVersion":               0,
+		"maxWireVersion":               8,
+		"readOnly":                     false,
+		"ok":                           1.0,
+	}
 
 	e := reply.Write(writer)
 	if e != nil {

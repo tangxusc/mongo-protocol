@@ -69,6 +69,7 @@ func (server *Server) process(header *MsgHeader, connContext *ConnContext, e err
 			writeError(header, e, connContext)
 		}
 	}()
+	logrus.Debugf("[server]process command header.OpCode:%s", header.OpCode)
 	h, ok := server.handlerMap[header.OpCode]
 	if !ok {
 		e = server.defaultHandler.Process(header, r, connContext)

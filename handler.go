@@ -52,12 +52,16 @@ func (d *PrintHandler) Process(header *MsgHeader, r *Reader, conn *ConnContext) 
 	default:
 		logrus.Warningf("[server]Unsupported messages for header.OpCode=[%v]", header.OpCode)
 		_, e = ioutil.ReadAll(r)
+		reply := NewReply(header.RequestID)
+		reply.NumberReturned = 1
+		reply.Documents = map[string]interface{}{"ok": 1}
+		e = reply.Write(conn)
 	}
 	if e != nil {
 		return e
 	}
 	bytes, _ := json.Marshal(data)
-	logrus.Infof(`[server]handler message: %s`, bytes)
+	logrus.Infof(`[server]PrintHandler message: %s`, bytes)
 	return nil
 }
 

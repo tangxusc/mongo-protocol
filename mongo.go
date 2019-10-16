@@ -4,16 +4,69 @@ import (
 	"encoding/binary"
 	"gopkg.in/mgo.v2/bson"
 	"io"
+	"io/ioutil"
 )
 
+type MsgSection struct {
+	DocumentSequenceIdentifier string
+	DocumentSequences          []bson.M
+	Body                       bson.M
+}
+
 type Msg struct {
-	Msg string
+	FlatBits uint32
+	Sections []*MsgSection
 }
 
 func (m *Msg) UnMarshal(r *Reader) error {
-	s, e := r.ReadCString()
-	m.Msg = s
-	return e
+	m.Sections = make([]*MsgSection, 0)
+	defer func() {
+		_, _ = ioutil.ReadAll(r)
+	}()
+	n, e := r.ReadInt32()
+	if e != nil {
+		return e
+	}
+	m.FlatBits = uint32(n)
+	for {
+		bytes, e := r.ReadBytes(1)
+		if bytes == nil || e != nil {
+			break
+		}
+		switch bytes[0] {
+		case 0:
+			ms, e := r.ReadDocument()
+			if e != nil {
+				return e
+			}
+			section := &MsgSection{
+				Body: ms,
+			}
+			m.Sections = append(m.Sections, section)
+		case 1:
+			i, e := r.ReadInt32()
+			if e != nil {
+				return e
+			}
+			reader := io.LimitReader(r, int64(i))
+			secReader := &Reader{reader}
+
+			s, e := secReader.ReadCString()
+			if e != nil {
+				return e
+			}
+			ms, e := secReader.ReadDocuments()
+			if e != nil {
+				return e
+			}
+			section := &MsgSection{
+				DocumentSequenceIdentifier: s,
+				DocumentSequences:          ms,
+			}
+			m.Sections = append(m.Sections, section)
+		}
+	}
+	return nil
 }
 
 type KillCursors struct {
@@ -274,18 +327,13 @@ const (
 type OpCode int32
 
 const (
-	OP_REPLY                    OpCode = 1
-	OP_MSG                      OpCode = 1000
-	OP_UPDATE                   OpCode = 2001
-	OP_INSERT                   OpCode = 2002
-	OP_RESERVED                 OpCode = 2003
-	OP_QUERY                    OpCode = 2004
-	OP_GET_MORE                 OpCode = 2005
-	OP_DELETE                   OpCode = 2006
-	OP_KILL_CURSORS             OpCode = 2007
-	OP_COMMAND_DEPRECATED       OpCode = 2008
-	OP_COMMAND_REPLY_DEPRECATED OpCode = 2009
-	OP_COMMAND                  OpCode = 2010
-	OP_COMMAND_REPLY            OpCode = 2011
-	OP_MSG_NEW                  OpCode = 2013
+	OP_REPLY        OpCode = 1
+	OP_UPDATE       OpCode = 2001
+	OP_INSERT       OpCode = 2002
+	RESERVED        OpCode = 2003
+	OP_QUERY        OpCode = 2004
+	OP_GET_MORE     OpCode = 2005
+	OP_DELETE       OpCode = 2006
+	OP_KILL_CURSORS OpCode = 2007
+	OP_MSG          OpCode = 2013
 )

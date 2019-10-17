@@ -108,6 +108,10 @@ func (server *Server) AddHandler(code OpCode, handler Handler) {
 	server.handlerMap[code] = handler
 }
 
+func (server *Server) GetHandler(code OpCode) Handler {
+	return server.handlerMap[code]
+}
+
 func (server *Server) SetDefaultHandler(handler Handler) {
 	server.defaultHandler = handler
 }

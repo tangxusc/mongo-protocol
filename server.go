@@ -92,10 +92,12 @@ func writeError(header *MsgHeader, e interface{}, connContext *ConnContext) {
 func NewErrorReply(header *MsgHeader, msg string) *Reply {
 	reply := NewReply(header.RequestID)
 	reply.NumberReturned = 1
-	if header.OpCode == OP_QUERY {
+	switch header.OpCode {
+	case OP_QUERY:
 		reply.ResponseFlags = QueryFailure
 		reply.Documents = map[string]interface{}{"$err": msg}
-	} else {
+	case OP_MSG:
+		//TODO:msg 消息回复
 		reply.ResponseFlags = 0
 		reply.Documents = map[string]interface{}{"errmsg": msg}
 	}

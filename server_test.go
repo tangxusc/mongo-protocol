@@ -1,11 +1,13 @@
 package mongo_protocol
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/mgo.v2/bson"
 	"io"
 	"io/ioutil"
 	"os"
@@ -14,12 +16,93 @@ import (
 )
 
 func TestNewServer(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetReportCaller(true)
 	server := NewServer(`27018`)
 	server.AddHandler(OP_QUERY, &TestHandler{})
+	server.AddHandler(OP_MSG, &MsgHandler{})
 	e := server.Start(context.TODO())
 	if e != nil {
 		panic(e)
 	}
+}
+
+type MsgHandler struct {
+}
+
+func (m *MsgHandler) Process(header *MsgHeader, r *Reader, conn *ConnContext) error {
+	msg := &Msg{}
+	if e := msg.UnMarshal(r); e != nil {
+		return e
+	}
+	marshal, _ := json.Marshal(msg)
+	logrus.Debugf("test=-----------------------:%s", marshal)
+
+	body := msg.GetBodyMsgSection()
+	//insert
+	_, ok := body["insert"]
+	if ok {
+		logrus.Debugf("insert------------------")
+		msgReply := NewMsgReply(header.RequestID)
+		section := NewBodyMsgSection()
+		section.Body = bson.M{
+			"n":  1,
+			"ok": 1,
+		}
+
+		msgReply.Sections = append(msgReply.Sections, section)
+		e := msgReply.Write(conn)
+		return e
+	}
+	//find
+	_, ok = body["find"]
+	if ok {
+		logrus.Debugf("find------------------")
+		msgReply := NewMsgReply(header.RequestID)
+		section := NewBodyMsgSection()
+		section.Body = bson.M{
+			"cursor": bson.M{
+				"firstBatch": nil,
+				//"id": bson.M{
+				//	"$numberLong": "0",
+				//},
+				"id": int64(11),
+				"ns": "aggregate.a1_event",
+			},
+			"ok": 1,
+		}
+
+		msgReply.Sections = append(msgReply.Sections, section)
+		e := msgReply.Write(conn)
+		return e
+	}
+	//isMaster
+	_, ok = body["isMaster"]
+	if ok {
+		logrus.Debugf("isMaster------------------")
+		msgReply := NewMsgReply(header.RequestID)
+		section := NewBodyMsgSection()
+		section.Body = bson.M{
+			"ismaster":                     true,
+			"maxBsonObjectSize":            16777216,
+			"maxMessageSizeBytes":          48000000,
+			"maxWriteBatchSize":            100000,
+			"localTime":                    time.Now(),
+			"logicalSessionTimeoutMinutes": 30,
+			"connectionId":                 808,
+			"minWireVersion":               0,
+			"maxWireVersion":               3,
+			"readOnly":                     false,
+			"ok":                           1.0,
+		}
+
+		msgReply.Sections = append(msgReply.Sections, section)
+		e := msgReply.Write(conn)
+		return e
+	}
+	//
+
+	return nil
 }
 
 func TestMarshal(t *testing.T) {
@@ -43,8 +126,8 @@ func (t *TestHandler) Process(header *MsgHeader, r *Reader, conn *ConnContext) e
 		return e
 	}
 	bytes, _ := json.Marshal(query)
-	fmt.Println(string(bytes))
-	logrus.Debugf(`%s`, bytes)
+	//fmt.Println(string(bytes))
+	logrus.Debugf(`TestHandler-----------------------%s`, bytes)
 
 	_, ok := query.Query["$query"]
 	if ok {
@@ -113,7 +196,7 @@ func buildinfo(query *Query, w io.Writer) error {
 	reply := NewReply(query.Header.RequestID)
 	reply.NumberReturned = 1
 	reply.Documents = map[string]interface{}{
-		"version":          "4.2.0",
+		"version":          "3.4.0",
 		"gitVersion":       "a4b751dcf51dd249c5865812b390cfd1c0129c30",
 		"modules":          make([]string, 0),
 		"allocator":        "tcmalloc",
@@ -180,7 +263,7 @@ func isMaster(query *Query, writer io.Writer) error {
 		"logicalSessionTimeoutMinutes": 30,
 		"connectionId":                 808,
 		"minWireVersion":               0,
-		"maxWireVersion":               8,
+		"maxWireVersion":               3,
 		"readOnly":                     false,
 		"ok":                           1.0,
 	}
@@ -222,4 +305,10 @@ func listDatabase(query *Query, w io.Writer) error {
 		return e
 	}
 	return nil
+}
+
+func TestByteWrite(t *testing.T) {
+	buffer := &bytes.Buffer{}
+	_ = binary.Write(buffer, binary.LittleEndian, int32(10))
+	println(buffer.Len())
 }

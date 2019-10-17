@@ -1,69 +1,199 @@
 package mongo_protocol
 
 import (
+	"bytes"
 	"encoding/binary"
 	"gopkg.in/mgo.v2/bson"
 	"io"
 	"io/ioutil"
 )
 
-type MsgSection struct {
+/*
+struct Section {
+    uint8 payloadType;
+    union payload {
+        document  document; // payloadType == 0
+        struct sequence { // payloadType == 1
+            int32      size;
+            cstring    identifier;
+            document*  documents;
+        };
+    };
+};
+
+struct OP_MSG {
+    struct MsgHeader {
+        int32  messageLength;
+        int32  requestID;
+        int32  responseTo;
+        int32  opCode = 2013;
+    };
+    uint32      flagBits;
+    Section+    sections;
+    [uint32     checksum;]
+};
+*/
+
+type MsgReply struct {
+	*Msg
+	Header *MsgHeader
+}
+
+func NewMsgReply(requestID int32) *MsgReply {
+	return &MsgReply{
+		Header: &MsgHeader{
+			MessageLength: 0,
+			ResponseTo:    requestID,
+			OpCode:        OP_MSG,
+		},
+		Msg: &Msg{
+			Sections: make([]MsgSection, 0),
+		},
+	}
+}
+
+func (m *MsgReply) Write(w io.Writer) error {
+	buffer := &bytes.Buffer{}
+	if e := binary.Write(buffer, binary.LittleEndian, m.FlatBits); e != nil {
+		return e
+	}
+	for _, v := range m.Sections {
+		if _, e := buffer.Write([]byte{v.GetKind()}); e != nil {
+			return e
+		}
+		body, ok := v.(*BodyMsgSection)
+		if ok {
+			if out, e := bson.Marshal(body.Body); e != nil {
+				return e
+			} else {
+				if _, e = buffer.Write(out); e != nil {
+					return e
+				}
+			}
+		} else {
+			section := v.(*DocumentSequenceMsgSection)
+			if e := binary.Write(buffer, binary.LittleEndian, section.Size); e != nil {
+				return e
+			}
+			if _, e := buffer.Write([]byte(section.DocumentSequenceIdentifier)); e != nil {
+				return e
+			}
+			for _, doc := range section.DocumentSequences {
+				if out, e := bson.Marshal(doc); e != nil {
+					return e
+				} else {
+					if _, e = buffer.Write(out); e != nil {
+						return e
+					}
+				}
+			}
+		}
+	}
+
+	m.Header.MessageLength = int32(4*4 + buffer.Len())
+	if e := binary.Write(w, binary.LittleEndian, m.Header); e != nil {
+		return e
+	}
+	if _, e := w.Write(buffer.Bytes()); e != nil {
+		return e
+	}
+	return nil
+}
+
+type DocumentSequenceMsgSection struct {
+	Kind                       byte
+	Size                       int32
 	DocumentSequenceIdentifier string
 	DocumentSequences          []bson.M
-	Body                       bson.M
+}
+
+func NewDocumentSequenceMsgSection() *DocumentSequenceMsgSection {
+	return &DocumentSequenceMsgSection{Kind: 1}
+}
+
+func (d *DocumentSequenceMsgSection) GetKind() byte {
+	return d.Kind
+}
+
+type BodyMsgSection struct {
+	Kind byte
+	Body bson.M
+}
+
+func NewBodyMsgSection() *BodyMsgSection {
+	return &BodyMsgSection{Kind: 0}
+}
+
+func (b *BodyMsgSection) GetKind() byte {
+	return b.Kind
 }
 
 type Msg struct {
 	FlatBits uint32
-	Sections []*MsgSection
+	Sections []MsgSection
+}
+
+type MsgSection interface {
+	GetKind() byte
 }
 
 func (m *Msg) UnMarshal(r *Reader) error {
-	m.Sections = make([]*MsgSection, 0)
+	m.Sections = make([]MsgSection, 0)
 	defer func() {
 		_, _ = ioutil.ReadAll(r)
 	}()
-	n, e := r.ReadInt32()
+	flat, e := r.ReadInt32()
 	if e != nil {
 		return e
 	}
-	m.FlatBits = uint32(n)
+	m.FlatBits = uint32(flat)
 	for {
-		bytes, e := r.ReadBytes(1)
-		if bytes == nil || e != nil {
+		kindBytes, e := r.ReadBytes(1)
+		if kindBytes == nil || e != nil {
 			break
 		}
-		switch bytes[0] {
+		kind := kindBytes[0]
+		switch kind {
 		case 0:
-			ms, e := r.ReadDocument()
+			document, e := r.ReadDocument()
 			if e != nil {
 				return e
 			}
-			section := &MsgSection{
-				Body: ms,
-			}
-			m.Sections = append(m.Sections, section)
+			m.Sections = append(m.Sections, &BodyMsgSection{
+				Kind: kind,
+				Body: document,
+			})
 		case 1:
-			i, e := r.ReadInt32()
+			size, e := r.ReadInt32()
 			if e != nil {
 				return e
 			}
-			reader := io.LimitReader(r, int64(i))
+			reader := io.LimitReader(r, int64(size))
 			secReader := &Reader{reader}
 
-			s, e := secReader.ReadCString()
+			ident, e := secReader.ReadCString()
 			if e != nil {
 				return e
 			}
-			ms, e := secReader.ReadDocuments()
+			documents, e := secReader.ReadDocuments()
 			if e != nil {
 				return e
 			}
-			section := &MsgSection{
-				DocumentSequenceIdentifier: s,
-				DocumentSequences:          ms,
-			}
-			m.Sections = append(m.Sections, section)
+			m.Sections = append(m.Sections, &DocumentSequenceMsgSection{
+				Kind:                       kind,
+				Size:                       size,
+				DocumentSequenceIdentifier: ident,
+				DocumentSequences:          documents,
+			})
+		}
+	}
+	return nil
+}
+
+func (m *Msg) GetBodyMsgSection() bson.M {
+	for _, v := range m.Sections {
+		if v.GetKind() == 0 {
+			return v.(*BodyMsgSection).Body
 		}
 	}
 	return nil

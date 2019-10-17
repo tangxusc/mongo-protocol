@@ -39,6 +39,8 @@ func (r *Reader) ReadBytes(n int) ([]byte, error) {
 	return b, err
 }
 
+const CStringEndByte = '\x00'
+
 func (r *Reader) ReadCString() (string, error) {
 	var b []byte
 	var one = make([]byte, 1)
@@ -47,7 +49,7 @@ func (r *Reader) ReadCString() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if one[0] == '\x00' {
+		if one[0] == CStringEndByte {
 			break
 		}
 		b = append(b, one[0])
